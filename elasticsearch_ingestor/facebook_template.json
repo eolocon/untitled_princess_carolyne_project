@@ -1,0 +1,29 @@
+{
+  "index_patterns" : "facebook*",
+  "version" : 60001,
+  "settings" : {
+    "index.refresh_interval" : "5s",
+    "number_of_shards": 1,
+    "analysis": {
+      "analyzer": {
+        "my_custom_analyzer": {
+          "type": "stop",
+          "max_token_length": 30,
+          "stopwords": "_italian_"
+          }
+        }  
+      }
+  },
+  "mappings" : {
+    "properties" : {
+      "document_type": {"type": "keyword"},
+      "document_id": {"type": "keyword"},
+      "parent_document_id": {"type": "keyword"},
+      "user_id": {"type": "keyword"},
+      "polarity": {"type": "keyword"},
+      "document_text": {"type": "text", "fielddata": "true", "analyzer": "my_custom_analyzer"},
+      "document_time": {"type": "date"}
+    }
+  }
+}
+

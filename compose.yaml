@@ -1,0 +1,138 @@
+services:
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    hostname: zookeeper
+    container_name: zookeeper
+    networks: 
+      - app_network
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=2181
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    hostname: kafka
+    container_name: kafka
+    networks:
+      - app_network
+    environment:
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_BROKER_ID=2
+      - KAFKA_LOG_DIR=/tmp/kafka-logs
+      - KAFKA_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+    depends_on:
+      - zookeeper
+
+  spark:
+      build: 
+        context: ./spark
+        dockerfile: Dockerfile
+      image: spark
+      hostname: spark
+      container_name: spark
+      user: root
+      networks:
+        - app_network
+      volumes:
+        - ./spark/service:/service
+        - ./spark/jars:/root/.ivy2
+      environment:
+        - SERVICE=prediction
+        - KAFKA_BROKER=kafka:9092
+        - IN_TOPICS=scraper
+        - OUT_TOPICS=spark
+        
+      command: ['spark-submit', '--packages', 'org.apache.spark:spark-sql-kafka-0-10_2.12:3.2.0', 'main.py']
+      depends_on:
+        - kafka
+
+  scraper_ingestor:
+    image: logstash:7.16.3
+    hostname: scraper_ingestor
+    container_name: scraper_ingestor
+    networks:
+      - app_network
+    environment:
+      - TCP_PORT=12345
+      - KAFKA_BROKER=kafka:9092
+      - TOPIC=scraper
+    volumes:
+      - ./scraper_ingestor/logstash_scraper.conf:/usr/share/logstash/pipeline/logstash.conf
+      - ./scraper_ingestor/logstash.yml:/usr/share/logstash/config/logstash.yml
+    depends_on:
+      - kafka
+
+  scraper:
+    build:
+      context: ./scraper
+      dockerfile: Dockerfile
+    image: scraper
+    hostname: scraper
+    container_name: scraper
+    networks:
+      - app_network
+    environment:
+      - TARGETS=
+      - COOKIES=cookies.json
+      - INGESTOR_HOST=scraper_ingestor
+      - TCP_PORT=12345
+    volumes:
+      - ./scraper:/app
+    depends_on:
+      - scraper_ingestor
+    tty: true 
+  
+  elasticsearch:
+    image: elasticsearch:7.16.3
+    container_name: elasticsearch
+    hostname: elasticsearch
+    environment:
+      - "node.name=elasticsearch"
+      - "discovery.type=single-node"
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - 9200:9200
+      - 9300:9300
+    networks:
+      - app_network
+    volumes:
+     - ./elasticsearch/data:/usr/share/elasticsearch/data
+
+  elasticsearch_ingestor:
+    image: logstash:7.16.3
+    hostname: elasticsearch_ingestor
+    container_name: elasticsearch_ingestor
+    networks:
+      - app_network
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - ELASTICSEARCH_HOST=elasticsearch:9200
+      - TOPICS=spark
+      - INDEX=facebook
+      - TEMPLATE=/usr/share/logstash/templates/facebook_template.json
+    volumes:
+      - ./elasticsearch_ingestor/logstash_elasticsearch.conf:/usr/share/logstash/pipeline/logstash.conf
+      - ./elasticsearch_ingestor/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - ./elasticsearch_ingestor/facebook_template.json:/usr/share/logstash/templates/facebook_template.json
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    image: kibana:7.16.3
+    container_name: kibana
+    hostname: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - 5601:5601
+    networks:
+      - app_network
+    depends_on:
+      - elasticsearch
+
+networks:
+  app_network:
+    name: app_network
+    driver: bridge
