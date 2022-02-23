@@ -31,4 +31,34 @@ docker-compose up
 ## Architecture
 ![architecture](project_scheme.png)
 
+### kafka
+message broker  
+the whole application relies on the messages being shared through kafka
 
+### zookeeper
+required by kafka
+
+### scraper
+scrapes Facebook posts to be analyzed  
+produces a json stream containing interesting information about posts and comments  
+uses Facebook Scraper: https://github.com/kevinzg/facebook-scraper
+
+### scraper ingestor
+logstash based  
+ingests scraped data to Kafka
+
+### data processing
+sentiment analysis is performed using spark  
+scraped data are streamed to spark via kafka  
+each comment and post is labeled as 'positive' or 'negative' using logistic regression
+processed data are streamed back to kafka
+
+### elasticsearch ingestor
+logstash based
+ingests processed data to elasticsearch
+
+### elasticsearch
+store processed data to be queried
+
+### kibana
+provides the interactive dashboard used to visualize the processed data
